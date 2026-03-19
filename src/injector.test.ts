@@ -27,7 +27,7 @@ describe("buildContextBlock", () => {
     assert.equal(stats.lessons, 0);
   });
 
-  it("includes preferences", () => {
+  it("includes preferences in fallback mode (no prompt)", () => {
     store.setSemantic("pref.editor", "vim", 0.9, "user");
     const { text, stats } = buildContextBlock(store);
     assert.ok(text.includes("User Preferences"));
@@ -48,13 +48,45 @@ describe("buildContextBlock", () => {
     assert.ok(text.endsWith("</memory>"));
   });
 
-  it("scopes project context to cwd", () => {
+  it("scopes project context to cwd in fallback mode", () => {
     store.setSemantic("project.rosie.lang", "java", 0.9, "consolidation");
     store.setSemantic("project.other.lang", "python", 0.5, "consolidation");
 
     const { text } = buildContextBlock(store, "/workplace/samfp/Rosie");
     assert.ok(text.includes("rosie.lang"));
-    // low-confidence non-matching project should be excluded
     assert.ok(!text.includes("other.lang"));
+  });
+
+  // ─── Selective injection tests ───────────────────────────────────
+
+  it("selective: searches by prompt and returns relevant entries", () => {
+    store.setSemantic("pref.commit_style", "conventional commits", 0.9, "user");
+    store.setSemantic("project.rosie.di", "Dagger dependency injection", 0.95, "consolidation");
+    store.setSemantic("tool.sed", "use for daily note insertion", 0.9, "consolidation");
+
+    const { text, stats } = buildContextBlock(store, undefined, "how do I make commits");
+    assert.ok(text.includes("Relevant Memory"));
+    assert.ok(text.includes("commit"));
+    assert.ok(stats.semantic > 0);
+  });
+
+  it("selective: always includes lessons regardless of prompt", () => {
+    const { text } = buildContextBlock(store, undefined, "something totally unrelated xyz");
+    assert.ok(text.includes("Learned Corrections"));
+    assert.ok(text.includes("DON'T:"));
+  });
+
+  it("selective: includes project context when cwd matches", () => {
+    const { text } = buildContextBlock(store, "/workplace/samfp/Rosie", "how do I build");
+    // Should find rosie entries via project slug search
+    assert.ok(text.includes("rosie"));
+  });
+
+  it("selective: returns only lessons when prompt matches nothing", () => {
+    const { text, stats } = buildContextBlock(store, undefined, "zzzzqqqq xyzzy nonsense");
+    // No semantic hits, but lessons should still be there
+    assert.ok(text.includes("Learned Corrections"));
+    assert.equal(stats.semantic, 0);
+    assert.ok(stats.lessons > 0);
   });
 });

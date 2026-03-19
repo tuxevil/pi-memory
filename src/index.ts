@@ -60,14 +60,14 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("before_agent_start", async (_event, ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     if (!store) return;
 
-    const { text } = buildContextBlock(store, ctx.cwd);
+    const { text } = buildContextBlock(store, ctx.cwd, event.prompt);
     if (!text) return;
 
     return {
-      systemPrompt: `${_event.systemPrompt}\n\n${text}`,
+      systemPrompt: `${event.systemPrompt}\n\n${text}`,
     };
   });
 
