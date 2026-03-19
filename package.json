@@ -1,0 +1,21 @@
+{
+  "name": "pi-memory",
+  "version": "0.1.0",
+  "description": "Persistent memory for pi — learns corrections, preferences, and patterns from sessions and injects them into future conversations",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --test --import tsx src/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.48",
+    "better-sqlite3": "^11.9.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.21",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
