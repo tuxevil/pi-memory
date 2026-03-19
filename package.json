@@ -1,5 +1,5 @@
 {
-  "name": "pi-memory",
+  "name": "@samfp/pi-memory",
   "version": "0.1.0",
   "description": "Persistent memory for pi — learns corrections, preferences, and patterns from sessions and injects them into future conversations.",
   "keywords": [
