@@ -47,11 +47,28 @@ Extract ONLY concrete, reusable facts — not summaries of what happened. Focus 
 4. **Corrections/lessons** — things the user corrected, mistakes to avoid
    Example: { "rule": "Use sed to insert after ## Notes heading, not echo >> which appends after Tags", "category": "vault", "negative": true }
 
+5. **Validated approaches** — things the user explicitly confirmed worked well (positive signal)
+   Example: { "rule": "When deploying wiki changes, draft first and let user preview before publishing", "category": "wiki-edit", "negative": false }
+
+## What NOT to extract — these are derivable or ephemeral, and pollute memory:
+
+- **Code patterns, architecture, file paths, project structure** — these can be derived by reading the current project state (grep, git, file reads)
+- **Git history, recent changes, who-changed-what** — git log/blame are authoritative
+- **Debugging solutions or fix recipes** — the fix is in the code; the commit message has context
+- **Anything already documented in AGENTS.md, CLAUDE.md, or project config files**
+- **Ephemeral task details** — in-progress work, temporary state, current conversation context
+- **Activity summaries** — "today we worked on X" is not a lasting fact. Instead ask: what was *surprising* or *non-obvious* about it?
+- **File contents or code snippets** — the file itself is the source of truth
+- **Exact commands that worked once** — unless they encode a non-obvious pattern that the agent consistently gets wrong
+
+These exclusions apply even if the user asks to save such things. If asked, extract what was *surprising* or *non-obvious* — that is the part worth keeping.
+
 Rules:
 - Only extract if confidence >= 0.8 (you're reasonably sure this is a lasting preference, not a one-off)
 - Key format: lowercase, dots as separators, no spaces
 - Keep values concise (under 200 chars)
 - For corrections, set negative=true if it's something to AVOID
+- For validated approaches (user confirmed something works), set negative=false
 
 Respond with ONLY valid JSON matching this schema:
 {
@@ -128,18 +145,20 @@ export function parseConsolidationResponse(text: string): ExtractedMemory {
 }
 
 /**
- * Apply extracted memory to the store.
+ * Apply extracted memory to the store, filtering out derivable/ephemeral entries.
  */
 export function applyExtracted(store: MemoryStore, extracted: ExtractedMemory, source: string = "consolidation"): { semantic: number; lessons: number } {
   let semanticCount = 0;
   let lessonCount = 0;
 
   for (const s of extracted.semantic) {
+    if (isDerivableOrEphemeral(s.key, s.value)) continue;
     store.setSemantic(s.key, s.value, s.confidence, "consolidation");
     semanticCount++;
   }
 
   for (const l of extracted.lessons) {
+    if (isDerivableLesson(l.rule)) continue;
     const result = store.addLesson(l.rule, l.category, source, l.negative);
     if (result.success) lessonCount++;
   }
@@ -153,6 +172,51 @@ const VALID_KEY_RE = /^(pref|project|user|tool|lesson)\.[a-z0-9._-]+$/;
 
 function isValidKey(key: string): boolean {
   return VALID_KEY_RE.test(key) && key.length <= 100;
+}
+
+/**
+ * Reject semantic entries that store derivable or ephemeral information.
+ * These pollute memory — the project itself is the source of truth.
+ */
+function isDerivableOrEphemeral(key: string, value: string): boolean {
+  const kl = key.toLowerCase();
+  const vl = value.toLowerCase();
+
+  // File paths, architecture, project structure — derivable from the project
+  if (kl.includes("filepath") || kl.includes("file_path") || kl.includes("directory")) return true;
+  if (/^project\.\w+\.(path|dir|location|structure|layout|architecture)$/.test(kl)) return true;
+
+  // Git history — git log/blame is authoritative
+  if (kl.includes("commit") || kl.includes("git.history") || kl.includes("git.recent")) return true;
+
+  // Activity summaries — "today we worked on X" is not a lasting fact
+  if (vl.startsWith("today ") || vl.startsWith("we worked on") || vl.startsWith("this session")) return true;
+
+  // Exact file contents or long code snippets
+  if (vl.includes("```") && vl.length > 300) return true;
+
+  // Temporary investigation state
+  if (kl.includes("current_task") || kl.includes("in_progress") || kl.includes("investigating")) return true;
+
+  return false;
+}
+
+/**
+ * Reject lesson entries that are derivable from code or too ephemeral.
+ */
+function isDerivableLesson(rule: string): boolean {
+  const rl = rule.toLowerCase();
+
+  // "File X is at path Y" — derivable
+  if (/file .+ is (at|in|located) /.test(rl)) return true;
+
+  // "The project uses X" when X is obvious from package.json/build files
+  if (/^the (project|codebase|repo) (uses|is written in) /.test(rl)) return true;
+
+  // Pure activity logging — "we fixed X" or "we deployed Y"
+  if (/^(we|i|the agent) (fixed|deployed|updated|changed|modified|ran|executed) /.test(rl)) return true;
+
+  return false;
 }
 
 function truncate(text: string, max: number): string {

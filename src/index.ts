@@ -86,6 +86,25 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  // Consolidate memory when switching sessions (/new, /resume)
+  pi.on("session_before_switch", async (_event, ctx) => {
+    if (!store) return;
+
+    if (pendingUserMessages.length >= 3) {
+      ctx.ui.setStatus("pi-memory", "🧠 Consolidating memory...");
+      try {
+        await consolidateSession();
+      } catch {
+        // Best-effort
+      }
+      ctx.ui.setStatus("pi-memory", "");
+    }
+
+    // Reset for the next session
+    pendingUserMessages = [];
+    pendingAssistantMessages = [];
+  });
+
   pi.on("session_shutdown", async () => {
     if (!store) return;
 

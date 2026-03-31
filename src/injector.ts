@@ -59,10 +59,21 @@ function buildSelectiveBlock(store: MemoryStore, prompt: string, cwd?: string): 
   // Lessons are always injected — they're corrections that apply universally
   const lessons = store.listLessons(undefined, 50);
   if (lessons.length > 0) {
-    const formatted = lessons.map(l =>
-      `${l.negative ? "DON'T: " : ""}${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
-    );
-    sections.push(formatSection("Learned Corrections", formatted));
+    const corrections = lessons.filter(l => l.negative);
+    const positives = lessons.filter(l => !l.negative);
+
+    if (corrections.length > 0) {
+      const formatted = corrections.map(l =>
+        `DON'T: ${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
+      );
+      sections.push(formatSection("Learned Corrections", formatted));
+    }
+    if (positives.length > 0) {
+      const formatted = positives.map(l =>
+        `${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
+      );
+      sections.push(formatSection("Validated Approaches", formatted));
+    }
     lessonCount = lessons.length;
   }
 
@@ -70,7 +81,7 @@ function buildSelectiveBlock(store: MemoryStore, prompt: string, cwd?: string): 
     return { text: "", stats: { semantic: 0, lessons: 0 } };
   }
 
-  let text = `<memory>\n${sections.join("\n")}\n</memory>`;
+  let text = `<memory>\n${sections.join("\n")}\n\n${MEMORY_DRIFT_CAVEAT}\n</memory>`;
 
   if (text.length > MAX_CONTEXT_CHARS) {
     text = text.slice(0, MAX_CONTEXT_CHARS - 20) + "\n... (truncated)\n</memory>";
@@ -109,10 +120,21 @@ function buildFallbackBlock(store: MemoryStore, cwd?: string): ContextBlock {
 
   const lessons = store.listLessons(undefined, 50);
   if (lessons.length > 0) {
-    const formatted = lessons.map(l =>
-      `${l.negative ? "DON'T: " : ""}${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
-    );
-    sections.push(formatSection("Learned Corrections", formatted));
+    const corrections = lessons.filter(l => l.negative);
+    const positives = lessons.filter(l => !l.negative);
+
+    if (corrections.length > 0) {
+      const formatted = corrections.map(l =>
+        `DON'T: ${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
+      );
+      sections.push(formatSection("Learned Corrections", formatted));
+    }
+    if (positives.length > 0) {
+      const formatted = positives.map(l =>
+        `${l.rule}${l.category !== "general" ? ` [${l.category}]` : ""}`
+      );
+      sections.push(formatSection("Validated Approaches", formatted));
+    }
     lessonCount = lessons.length;
   }
 
@@ -126,7 +148,7 @@ function buildFallbackBlock(store: MemoryStore, cwd?: string): ContextBlock {
     return { text: "", stats: { semantic: 0, lessons: 0 } };
   }
 
-  let text = `<memory>\n${sections.join("\n")}\n</memory>`;
+  let text = `<memory>\n${sections.join("\n")}\n\n${MEMORY_DRIFT_CAVEAT}\n</memory>`;
 
   if (text.length > MAX_CONTEXT_CHARS) {
     text = text.slice(0, MAX_CONTEXT_CHARS - 20) + "\n... (truncated)\n</memory>";
@@ -137,14 +159,51 @@ function buildFallbackBlock(store: MemoryStore, cwd?: string): ContextBlock {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
+/** Staleness thresholds (in days) */
+const STALE_WARNING_DAYS = 30;
+const VERY_STALE_DAYS = 90;
+
 function formatSection(title: string, items: string[]): string {
   return `## ${title}\n${items.map(i => `- ${i}`).join("\n")}`;
 }
 
+/**
+ * Format a semantic entry with staleness indicator.
+ * Memories older than 30 days get a warning; older than 90 days get a strong warning.
+ * This prevents the agent from treating stale facts as current truth.
+ */
 function formatSemantic(entry: SemanticEntry): string {
   const key = entry.key.split(".").slice(1).join(".");
-  return `${key}: ${entry.value}`;
+  const ageDays = daysSince(entry.updated_at);
+  const staleTag = ageDays >= VERY_STALE_DAYS
+    ? ` ⚠️ ${ageDays}d old — verify before acting on this`
+    : ageDays >= STALE_WARNING_DAYS
+      ? ` (${ageDays}d ago)`
+      : "";
+  return `${key}: ${entry.value}${staleTag}`;
 }
+
+/**
+ * Calculate days since a date string.
+ */
+function daysSince(dateStr: string): number {
+  try {
+    const then = new Date(dateStr).getTime();
+    const now = Date.now();
+    return Math.floor((now - then) / (1000 * 60 * 60 * 24));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Memory drift caveat — appended to the memory block so the agent knows
+ * to verify recalled facts against current state before acting on them.
+ */
+const MEMORY_DRIFT_CAVEAT = `## Before acting on memory
+- Memory records can become stale. If a memory names a file, function, or flag — verify it still exists before recommending it. "The memory says X exists" is not the same as "X exists now."
+- If a recalled memory conflicts with what you observe in the current code or project state, trust what you observe now.
+- Memories about project state (deadlines, decisions, architecture) decay fastest — check if still relevant.`;
 
 function projectSlug(cwd: string): string {
   const parts = cwd.split("/").filter(Boolean);
