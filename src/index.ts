@@ -47,10 +47,11 @@ export default function (pi: ExtensionAPI) {
   // ─── Lifecycle ───────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    cachedCtx = ctx;
     try {
       store = new MemoryStore(DB_PATH);
       sessionCwd = ctx.cwd;
+      cachedCtx = ctx;
+      sessionId = (ctx as any).sessionId ?? (ctx as any).session?.id;
 
       const stats = store.stats();
       if (stats.semantic + stats.lessons > 0) {
@@ -78,10 +79,16 @@ export default function (pi: ExtensionAPI) {
     for (const msg of event.messages) {
       if (msg.role === "user" && "content" in msg) {
         const text = extractText(msg.content);
-        if (text) pendingUserMessages.push(text);
+        if (text) {
+          pendingUserMessages.push(text);
+          if (pendingUserMessages.length > 60) pendingUserMessages.shift();
+        }
       } else if (msg.role === "assistant" && "content" in msg) {
         const text = extractText(msg.content);
-        if (text) pendingAssistantMessages.push(text);
+        if (text) {
+          pendingAssistantMessages.push(text);
+          if (pendingAssistantMessages.length > 60) pendingAssistantMessages.shift();
+        }
       }
     }
   });
@@ -146,7 +153,7 @@ export default function (pi: ExtensionAPI) {
       const result = await pi.exec("pi", [
         "-p", prompt,
         "--print",
-        "--no-memory",
+        "--no-extensions",
         "--model", "claude-sonnet-4-20250514",
       ], {
         timeout: 45_000,
