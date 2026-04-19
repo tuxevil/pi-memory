@@ -190,7 +190,17 @@ export class MemoryStore {
   }
 
   deleteLesson(id: string): boolean {
-    const result = this.db.prepare("UPDATE lessons SET is_deleted = 1 WHERE id = ? AND is_deleted = 0").run(id);
+    // Support both full UUIDs and prefix matches (e.g. first 8 chars)
+    let result = this.db.prepare("UPDATE lessons SET is_deleted = 1 WHERE id = ? AND is_deleted = 0").run(id);
+    if (result.changes === 0 && id.length < 36) {
+      // Try prefix match — ensure it's unambiguous
+      const matches = this.db.prepare("SELECT id FROM lessons WHERE id LIKE ? AND is_deleted = 0").all(`${id}%`) as { id: string }[];
+      if (matches.length === 1) {
+        result = this.db.prepare("UPDATE lessons SET is_deleted = 1 WHERE id = ? AND is_deleted = 0").run(matches[0].id);
+        if (result.changes > 0) this.logEvent("delete", "lesson", matches[0].id);
+        return true;
+      }
+    }
     if (result.changes > 0) this.logEvent("delete", "lesson", id);
     return result.changes > 0;
   }
