@@ -42,10 +42,10 @@ const GLOBAL_SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
  * Resolve the memory DB path for a given working directory.
  * Priority:
  *   1. "pi-memory".localPath from {cwd}/.pi/settings.json → join(localPath, "memory.db")
- *   2. {cwd}/.pi/memory/memory.db  (per-agent local default)
+ *   2. Global default: ~/.pi/memory/memory.db  (preserves existing behavior)
  */
 function resolveDbPath(cwd: string): string {
-  // Try reading the local project settings first
+  // Try reading the local project settings for an explicit localPath override
   try {
     const localSettingsPath = join(cwd, ".pi", "settings.json");
     const raw = readFileSync(localSettingsPath, "utf-8");
@@ -55,10 +55,10 @@ function resolveDbPath(cwd: string): string {
       return join(piMemory.localPath, "memory.db");
     }
   } catch {
-    // No local settings or parse error — continue to default
+    // No local settings or parse error — use global default
   }
-  // Default: per-agent local memory
-  return join(cwd, ".pi", "memory", "memory.db");
+  // Default: global shared memory (preserves existing behavior)
+  return DEFAULT_DB_PATH;
 }
 
 /**
