@@ -83,8 +83,9 @@ describe("buildContextBlock", () => {
     store.addLesson("Never fabricate competitor claims in blog posts", "writing", "user", true);
 
     // With selective mode and a bug bounty prompt, should get bug-bounty + general lessons
-    const { text: bbText } = buildContextBlock(store, undefined, "run a pentest on the target", { lessonInjection: "selective" });
-    assert.ok(bbText.includes("verify exploit"), "should include bug-bounty lesson for pentest prompt");
+    // FTS matches "bounty" against the category field and "exploit" against rule text
+    const { text: bbText } = buildContextBlock(store, undefined, "found an exploit on the bug bounty target", { lessonInjection: "selective" });
+    assert.ok(bbText.includes("verify exploit"), "should include bug-bounty lesson for bounty prompt");
     assert.ok(bbText.includes("conventional commits"), "should include general lessons");
 
     // With selective mode and a writing prompt, should get writing + general lessons

@@ -117,9 +117,8 @@ function buildSelectiveBlock(store: MemoryStore, prompt: string, cwd?: string, c
  * Strategy:
  * 1. Search lessons by prompt terms (semantic/FTS match)
  * 2. If cwd implies a project, also search by project slug
- * 3. Infer likely categories from the prompt and include those
- * 4. Always include "general" category lessons (up to a cap)
- * 5. Dedup and cap at LESSON_SEARCH_LIMIT
+ * 3. Always include "general" category lessons (broadly applicable)
+ * 4. Dedup and cap at LESSON_SEARCH_LIMIT
  */
 function getRelevantLessons(store: MemoryStore, prompt: string, cwd?: string): LessonEntry[] {
   const seen = new Set<string>();
@@ -134,7 +133,7 @@ function getRelevantLessons(store: MemoryStore, prompt: string, cwd?: string): L
     }
   }
 
-  // 1. Search by prompt relevance
+  // 1. Search by prompt relevance (FTS across rule text + category)
   add(store.searchLessons(prompt, LESSON_SEARCH_LIMIT));
 
   // 2. Search by project slug if we have a cwd
@@ -143,38 +142,10 @@ function getRelevantLessons(store: MemoryStore, prompt: string, cwd?: string): L
     add(store.searchLessons(slug, 5));
   }
 
-  // 3. Infer categories from prompt and pull matching lessons
-  const categories = inferCategories(prompt);
-  for (const cat of categories) {
-    add(store.listLessons(cat, 10));
-  }
-
-  // 4. Always include general lessons (they're broadly applicable)
+  // 3. Always include general lessons (they're broadly applicable)
   add(store.listLessons("general", 10));
 
   return result.slice(0, LESSON_SEARCH_LIMIT);
-}
-
-/**
- * Infer likely lesson categories from the prompt text.
- * Maps common keywords/topics to known category names.
- */
-const CATEGORY_SIGNALS: Record<string, string[]> = {
-  "bug-bounty": ["bounty", "pentest", "recon", "vuln", "exploit", "h1", "hackerone", "intigriti", "bbp", "security", "cve", "xss", "sqli", "idor", "csrf", "ssrf"],
-  "writing": ["blog", "write", "article", "post", "draft", "publish", "circuit-break", "readme"],
-  "subagent": ["subagent", "background", "spawn", "parallel"],
-  "pi-dashboard": ["dashboard", "pi-dashboard", "chat slot"],
-};
-
-function inferCategories(prompt: string): string[] {
-  const lower = prompt.toLowerCase();
-  const matched: string[] = [];
-  for (const [category, signals] of Object.entries(CATEGORY_SIGNALS)) {
-    if (signals.some(s => lower.includes(s))) {
-      matched.push(category);
-    }
-  }
-  return matched;
 }
 
 // ─── Fallback (no prompt) ────────────────────────────────────────────
