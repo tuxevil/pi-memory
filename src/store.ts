@@ -44,6 +44,7 @@ export interface MemoryEvent {
 export class MemoryStore {
   private db: DatabaseSync;
   private writeLock: Promise<void> = Promise.resolve();
+  private hasFTS5: boolean = false;
 
   constructor(dbPath: string) {
     const dir = dirname(dbPath);
@@ -94,24 +95,31 @@ export class MemoryStore {
       // Column already exists — ignore
     }
 
-    // FTS5 virtual table for semantic search
-    this.db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(key, value, content='semantic', content_rowid='rowid');
+    // FTS5 virtual table for semantic search (optional — node:sqlite may lack FTS5)
+    try {
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(key, value, content='semantic', content_rowid='rowid');
 
-      CREATE TRIGGER IF NOT EXISTS semantic_ai AFTER INSERT ON semantic BEGIN
-        INSERT INTO semantic_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
-      END;
-      CREATE TRIGGER IF NOT EXISTS semantic_ad AFTER DELETE ON semantic BEGIN
-        INSERT INTO semantic_fts(semantic_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
-      END;
-      CREATE TRIGGER IF NOT EXISTS semantic_au AFTER UPDATE ON semantic BEGIN
-        INSERT INTO semantic_fts(semantic_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
-        INSERT INTO semantic_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
-      END;
-    `);
+        CREATE TRIGGER IF NOT EXISTS semantic_ai AFTER INSERT ON semantic BEGIN
+          INSERT INTO semantic_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS semantic_ad AFTER DELETE ON semantic BEGIN
+          INSERT INTO semantic_fts(semantic_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS semantic_au AFTER UPDATE ON semantic BEGIN
+          INSERT INTO semantic_fts(semantic_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
+          INSERT INTO semantic_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+        END;
+      `);
 
-    // Rebuild FTS index from existing data (idempotent)
-    this.db.exec(`INSERT INTO semantic_fts(semantic_fts) VALUES('rebuild')`);
+      // Rebuild FTS index from existing data (idempotent)
+      this.db.exec(`INSERT INTO semantic_fts(semantic_fts) VALUES('rebuild')`);
+      this.hasFTS5 = true;
+    } catch {
+      // FTS5 not available (node:sqlite compiled without SQLITE_ENABLE_FTS5).
+      // Search will use substring fallback — fine for typical memory store sizes.
+      this.hasFTS5 = false;
+    }
   }
 
   /**
@@ -180,6 +188,8 @@ export class MemoryStore {
   searchSemantic(query: string, limit: number = 10): SemanticEntry[] {
     const terms = query.trim().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return [];
+
+    if (!this.hasFTS5) return this._searchSemanticFallback(query, limit);
 
     // Build FTS5 query — quote each term for safety
     const ftsQuery = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(" OR ");
