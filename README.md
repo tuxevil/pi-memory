@@ -11,6 +11,14 @@ Persistent memory for [pi](https://github.com/badlogic/pi-mono). Learns correcti
 
 ## Install
 
+**Recommended:** Install [pi-total-recall](https://github.com/samfoy/pi-total-recall) to get the complete context stack — persistent memory, session history search, and local knowledge search in one package:
+
+```bash
+pi install pi-total-recall
+```
+
+Or install pi-memory standalone:
+
 ```bash
 pi install pi-memory
 ```
