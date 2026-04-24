@@ -27,6 +27,29 @@ import { buildContextBlock, type InjectorConfig } from "./injector.js";
 
 type ToolResult = AgentToolResult<unknown>;
 function ok(text: string): ToolResult { return { content: [{ type: "text", text }], details: {} }; }
+
+/**
+ * Strip one layer of surrounding quotes from a string value.
+ * Some local models (e.g. Qwen on certain runners) double-JSON-encode tool
+ * arguments, emitting `"\"fact\""` instead of `"fact"`. We defensively
+ * unwrap so these calls don't fail schema validation / equality checks.
+ */
+function stripQuotes<T>(v: T): T {
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if (s.length >= 2) {
+    const first = s[0];
+    const last = s[s.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      try {
+        // Prefer JSON.parse for double-quoted (handles escapes)
+        if (first === '"') return JSON.parse(s) as unknown as T;
+      } catch { /* fall through */ }
+      return s.slice(1, -1) as unknown as T;
+    }
+  }
+  return v;
+}
 import {
   buildConsolidationPrompt,
   parseConsolidationResponse,
@@ -308,7 +331,7 @@ export default function (pi: ExtensionAPI) {
     label: "Memory Remember",
     description: "Store a fact, preference, or lesson in persistent memory. Use dotted keys like pref.editor, project.rosie.lang, tool.sed.usage. For corrections, use type='lesson'.",
     parameters: Type.Object({
-      type: Type.Union([Type.Literal("fact"), Type.Literal("lesson")], { description: "'fact' for key-value, 'lesson' for a correction" }),
+      type: Type.String({ description: "'fact' for key-value, 'lesson' for a correction" }),
       key: Type.Optional(Type.String({ description: "Dotted key for facts (e.g. pref.commit_style)" })),
       value: Type.Optional(Type.String({ description: "Value for facts" })),
       rule: Type.Optional(Type.String({ description: "Rule text for lessons" })),
@@ -317,6 +340,20 @@ export default function (pi: ExtensionAPI) {
     }) as any,
     async execute(_id, params, _signal, _update, _ctx) {
       if (!store) return ok("Memory store not initialized");
+
+      // Defensively unwrap double-quoted string args from misbehaving model runners.
+      params = {
+        ...params,
+        type: stripQuotes(params.type),
+        key: stripQuotes(params.key),
+        value: stripQuotes(params.value),
+        rule: stripQuotes(params.rule),
+        category: stripQuotes(params.category),
+      };
+
+      if (params.type !== "fact" && params.type !== "lesson") {
+        return ok(`Invalid type: ${params.type}. Must be 'fact' or 'lesson'.`);
+      }
 
       if (params.type === "fact") {
         if (!params.key || !params.value) {
@@ -346,12 +383,23 @@ export default function (pi: ExtensionAPI) {
     label: "Memory Forget",
     description: "Remove a fact or lesson from persistent memory.",
     parameters: Type.Object({
-      type: Type.Union([Type.Literal("fact"), Type.Literal("lesson")]),
+      type: Type.String(),
       key: Type.Optional(Type.String({ description: "Key for facts" })),
       id: Type.Optional(Type.String({ description: "ID for lessons" })),
     }) as any,
     async execute(_id, params, _signal, _update, _ctx) {
       if (!store) return ok("Memory store not initialized");
+
+      params = {
+        ...params,
+        type: stripQuotes(params.type),
+        key: stripQuotes(params.key),
+        id: stripQuotes(params.id),
+      };
+
+      if (params.type !== "fact" && params.type !== "lesson") {
+        return ok(`Invalid type: ${params.type}. Must be 'fact' or 'lesson'.`);
+      }
 
       if (params.type === "fact" && params.key) {
         const deleted = store.deleteSemantic(params.key);
