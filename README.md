@@ -112,6 +112,40 @@ SQLite database at `~/.pi/memory/memory.db` (WAL mode). Three tables:
 - `lessons` — learned corrections with dedup
 - `events` — audit log of all memory operations
 
+### Project-local storage
+
+To keep a project's memory isolated from your user-global memory, add one of the following to `{project}/.pi/settings.json`:
+
+```jsonc
+{
+  // Package-specific — wins over the cascade below.
+  "pi-memory": {
+    "localPath": ".pi/memory"   // resolves to {project}/.pi/memory/memory.db
+  }
+}
+```
+
+Or, if installed via [`pi-total-recall`](https://github.com/samfoy/pi-total-recall), a single cascade key covers all three bundled packages:
+
+```jsonc
+{
+  "pi-total-recall": {
+    "localPath": ".pi/total-recall"
+    // pi-memory             → {project}/.pi/total-recall/memory/memory.db
+    // pi-session-search     → {project}/.pi/total-recall/session-search/
+    // pi-knowledge-search   → {project}/.pi/total-recall/knowledge-search/
+  }
+}
+```
+
+**Resolution order (highest priority first):**
+
+1. `pi-memory.localPath` in `{cwd}/.pi/settings.json`
+2. `pi-total-recall.localPath` cascade → `{localPath}/memory/memory.db`
+3. Global default: `~/.pi/memory/memory.db`
+
+Existing global installs are unaffected — this is strictly additive.
+
 ## License
 
 MIT

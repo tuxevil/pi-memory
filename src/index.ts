@@ -63,19 +63,29 @@ const GLOBAL_SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
 
 /**
  * Resolve the memory DB path for a given working directory.
- * Priority:
- *   1. "pi-memory".localPath from {cwd}/.pi/settings.json → join(localPath, "memory.db")
- *   2. Global default: ~/.pi/memory/memory.db  (preserves existing behavior)
+ *
+ * Priority (highest first):
+ *   1. "pi-memory".localPath from {cwd}/.pi/settings.json → {localPath}/memory.db
+ *   2. "pi-total-recall".localPath cascade → {localPath}/memory/memory.db
+ *   3. Global default: ~/.pi/memory/memory.db  (preserves existing behavior)
  */
-function resolveDbPath(cwd: string): string {
+export function resolveDbPath(cwd: string): string {
   // Try reading the local project settings for an explicit localPath override
   try {
     const localSettingsPath = join(cwd, ".pi", "settings.json");
     const raw = readFileSync(localSettingsPath, "utf-8");
     const settings = JSON.parse(raw);
+
+    // Package-specific override wins.
     const piMemory = settings?.["pi-memory"];
     if (piMemory && typeof piMemory === "object" && typeof piMemory.localPath === "string" && piMemory.localPath) {
       return join(piMemory.localPath, "memory.db");
+    }
+
+    // pi-total-recall cascade.
+    const piTotalRecall = settings?.["pi-total-recall"];
+    if (piTotalRecall && typeof piTotalRecall === "object" && typeof piTotalRecall.localPath === "string" && piTotalRecall.localPath) {
+      return join(piTotalRecall.localPath, "memory", "memory.db");
     }
   } catch {
     // No local settings or parse error — use global default
